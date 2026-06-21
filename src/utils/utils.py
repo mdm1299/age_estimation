@@ -1,14 +1,19 @@
 import os
 import time
 import torch
+from tqdm import tqdm
+
+def elapsedTime(lastTick):
+    elapsed    = (time.time() - lastTick)
+    return int(elapsed // 60), int(elapsed % 60)
 
 def saveModel(model, save_path):
     # create the directory if it doesn't extist
-        dir = os.path.dirname(save_path)
-        os.makedirs(dir, exist_ok=True)
-        # save the model
-        torch.save(model.state_dict(), save_path)
-        print(f"Saved model to {save_path}")
+    dir = os.path.dirname(save_path)
+    os.makedirs(dir, exist_ok=True)
+    # save the model
+    torch.save(model.state_dict(), save_path)
+    print(f"Saved model to {save_path}")
 
 def train(model, loaders, criterion, optimizer, epochs=25, device=torch.device('cpu'), save_path=None):
     epoch_loss = {
@@ -31,7 +36,9 @@ def train(model, loaders, criterion, optimizer, epochs=25, device=torch.device('
             else:
                 model.eval()
 
-            for inputs, (person, age) in loaders[phase]:
+            for batchIdx, (inputs, (person, age)) in (
+                pbar := tqdm(enumerate(loaders[phase]), total=len(loaders[phase]))
+            ):
                 inputs, person, age = inputs.to(device), person.to(device), age.to(device)
 
                 optimizer.zero_grad()
@@ -46,16 +53,24 @@ def train(model, loaders, criterion, optimizer, epochs=25, device=torch.device('
                         
                 running_loss += loss.item()
 
+                pbar.set_description(
+                    f"[{epoch:02} | {epochs:02}] Loss: {loss.item():.4f}"
+                )
+
+                if batchIdx % 500 == 0:     # checkpoint every 500 batches.
+                    saveModel(model, save_path)
+                    saveModel(optimizer, save_path.removesuffix(".pt") + "_optim.pt")
+
             avgLoss = running_loss / len(loaders[phase])
             epoch_loss[phase].append(avgLoss)
-            elapsed    = (time.time() - tick)
-            secs, mins = int(elapsed // 60), int(elapsed % 60)
+            mins, secs = elapsedTime(tick)
             
             print(f"{phase} Loss: {avgLoss:.4f}")
             print(f"⏱ {secs:02}:{mins:02}")
     
     if save_path:
         saveModel(model, save_path)
+        saveModel(optimizer, save_path.removesuffix(".pt") + "_optim.pt")
 
     return epoch_loss
             
