@@ -21,6 +21,9 @@ def train(model, loaders, criterion, optimizer, epochs=25, device=torch.device('
         "val": []
     }
 
+    is_cuda = device.type == "cuda"
+    scaler  = torch.amp.GradScaler("cuda") if is_cuda else None
+
     model.to(device)
 
     for epoch in range(1, epochs+1):
@@ -43,31 +46,41 @@ def train(model, loaders, criterion, optimizer, epochs=25, device=torch.device('
 
                 optimizer.zero_grad()
 
-                with torch.set_grad_enabled(phase=="train"):
-                    output = model(inputs)
-                    loss = criterion(output, (person, age))
+                with torch.set_grad_enabled(phase == "train"):
+                    if is_cuda:
+                        with torch.autocast("cuda"):
+                            output = model(inputs)
+                            loss   = criterion(output, (person, age))
+                    else:
+                        output = model(inputs)
+                        loss   = criterion(output, (person, age))
 
                     if phase == "train":
-                        loss.backward()
-                        optimizer.step()
-                        
+                        if scaler is not None:
+                            scaler.scale(loss).backward()
+                            scaler.step(optimizer)
+                            scaler.update()
+                        else:
+                            loss.backward()
+                            optimizer.step()
+
                 running_loss += loss.item()
 
                 pbar.set_description(
                     f"[{epoch:02} | {epochs:02}] Loss: {loss.item():.4f}"
                 )
 
-                if batchIdx % 500 == 0:     # checkpoint every 500 batches.
+                if batchIdx % 500 == 0:             # checkpoint every 500 batches
                     saveModel(model, save_path)
                     saveModel(optimizer, save_path.removesuffix(".pt") + "_optim.pt")
 
             avgLoss = running_loss / len(loaders[phase])
             epoch_loss[phase].append(avgLoss)
             mins, secs = elapsedTime(tick)
-            
+
             print(f"{phase} Loss: {avgLoss:.4f}")
             print(f"⏱ {secs:02}:{mins:02}")
-    
+
     if save_path:
         saveModel(model, save_path)
         saveModel(optimizer, save_path.removesuffix(".pt") + "_optim.pt")
