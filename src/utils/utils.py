@@ -70,7 +70,7 @@ def train(model, loaders, criterion, optimizer, epochs=25, device=torch.device('
                     f"[{epoch:02} | {epochs:02}] Loss: {loss.item():.4f}"
                 )
 
-                if batchIdx % 500 == 0:             # checkpoint every 500 batches
+                if (batchIdx+1) % 500 == 0:             # checkpoint every 500 batches
                     saveModel(model, save_path)
                     saveModel(optimizer, save_path.removesuffix(".pt") + "_optim.pt")
 

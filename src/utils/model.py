@@ -29,10 +29,10 @@ class CNNEncoder(nn.Module):
             param.requires_grad = not isFreeze
 
 class AgeNet(nn.Module):
-    def __init__(self, d_model=1280, nhead=8):
+    def __init__(self, seq_len=8, d_model=1280, nhead=8):
         super().__init__()
         # positional encodings 
-        self.pos_embedding = nn.Parameter(torch.zeros(1, 8, d_model))      # learnable positional encodings
+        self.pos_embedding = nn.Parameter(torch.zeros(1, seq_len, d_model))      # learnable positional encodings
         nn.init.trunc_normal_(self.pos_embedding, std=0.02)                # initialize them using truncated normal distribution.
         # encoders
         self.backbone = CNNEncoder()
