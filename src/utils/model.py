@@ -12,9 +12,13 @@ class CNNEncoder(nn.Module):
         self.ctx = nullcontext
 
     def forward(self, x):
-        x = self.features(x)
-        x = self.pool(x)                    # (B, out_dim, 1, 1)
-        x = x.flatten(1)                    # (B, out_dim)
+        with self.ctx():
+            B, T, C, H, W = x.shape             # takes in a clip as input
+            x = x.flatten(0, 1)                 # (B*T, C, H, W)
+            x = self.features(x)                # (B*T, out_dim, h*, w*)
+            x = self.pool(x)                    # (B*T, out_dim, 1, 1)
+            x = x.flatten(1)                    # (B*T, out_dim)
+            x = x.view(B, T, -1)                # (B, T, out_dim)
         return x
     
     def freeze(self, isFreeze=True):
@@ -31,9 +35,10 @@ class CNNEncoder(nn.Module):
 class AgeNet(nn.Module):
     def __init__(self, seq_len=8, d_model=1280, nhead=8):
         super().__init__()
+        self.use_precompute(False)
         # positional encodings 
         self.pos_embedding = nn.Parameter(torch.zeros(1, seq_len, d_model))      # learnable positional encodings
-        nn.init.trunc_normal_(self.pos_embedding, std=0.02)                # initialize them using truncated normal distribution.
+        nn.init.trunc_normal_(self.pos_embedding, std=0.02)                      # initialize them using truncated normal distribution.
         # encoders
         self.backbone = CNNEncoder()
         self.transformerEncoder = nn.TransformerEncoder(
@@ -51,23 +56,22 @@ class AgeNet(nn.Module):
         self.person_head = nn.Linear(d_model, 1)
         self.age_head    = nn.Linear(d_model, 1)
     
-    def forward(self, x):
-        B, T, C, H, W = x.shape
+    def use_precompute(self, enable=True):
+        self.forward = self._forward_features if enable else self._forward_raw
+    
+    def _forward_raw(self, x):
+        x = self.backbone(x)                # (B, T, out_dim)
+        return self._forward_features(x)
 
-        x = x.flatten(0, 1)                 # (B*T, C, H, W)
-
-        with self.backbone.ctx():
-            x = self.backbone(x)            # (B*T, dim_out)
-
-        x = self.proj(x)                    # (B*T, d)
-        x = x.view(B, T, -1)                # (B, T, d)
+    def _forward_features(self, x):
+        x = self.proj(x)                    # (B, T, d)
         x = x + self.pos_embedding          # (B, T, d)
         x = self.transformerEncoder(x)      # (B, T, d)
         x = x.mean(dim=1)                   # (B, d)
 
         person = self.person_head(x)        # (B, 1)
         age = self.age_head(x)              # (B, 1)
-        
+
         return (person, age)
     
 

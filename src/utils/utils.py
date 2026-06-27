@@ -86,7 +86,52 @@ def train(model, loaders, criterion, optimizer, epochs=25, device=torch.device('
         saveModel(optimizer, save_path.removesuffix(".pt") + "_optim.pt")
 
     return epoch_loss
-            
-                
 
-                
+
+def extract_features(model, loader, shard_dir, split, device, shard_size=256):
+    os.makedirs(shard_dir, exist_ok=True)
+    model.eval()
+ 
+    all_shard_ids = []
+    all_local_ids = []
+    all_persons   = []
+    all_ages      = []
+ 
+    shard_id     = 0
+    shard_buffer = []
+ 
+    def flush_shard(buf, id):
+        path = os.path.join(shard_dir, f"{split}_shard_{id:04d}.pt")
+        if not os.path.exists(path):
+            torch.save({"features": torch.stack(buf)}, path)
+ 
+    with torch.inference_mode():
+        for clips, (persons, ages) in tqdm(loader, desc=f"Extracting [{split}]"):
+            clips    = clips.to(device)
+            features = model(clips).cpu()
+ 
+            for i in range(len(features)):
+                all_shard_ids.append(shard_id)
+                all_local_ids.append(len(shard_buffer))
+                all_persons.append(persons[i].item())
+                all_ages.append(ages[i].item())
+ 
+                shard_buffer.append(features[i])
+ 
+                if len(shard_buffer) == shard_size:
+                    flush_shard(shard_buffer, shard_id)
+                    shard_buffer = []
+                    shard_id    += 1
+ 
+    if shard_buffer:
+        flush_shard(shard_buffer, shard_id)
+ 
+    torch.save({
+        "shard_ids": torch.tensor(all_shard_ids, dtype=torch.long),
+        "local_ids": torch.tensor(all_local_ids, dtype=torch.long),
+        "persons":   torch.tensor(all_persons,   dtype=torch.float32),
+        "ages":      torch.tensor(all_ages,       dtype=torch.float32),
+    }, os.path.join(shard_dir, f"{split}_index.pt"))
+ 
+    print(f"[{split}] {len(all_shard_ids)} samples, {shard_id + 1} shards in {shard_dir}/")
+ 
