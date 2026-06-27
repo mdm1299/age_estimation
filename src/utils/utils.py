@@ -89,22 +89,22 @@ def train(model, loaders, criterion, optimizer, epochs=25, device=torch.device('
 
 
 def extract_features(model, loader, shard_dir, split, device, shard_size=256):
+    def flush_shard(buf, id):
+        path = os.path.join(shard_dir, f"{split}_shard_{id:04d}.pt")
+        if not os.path.exists(path):
+            torch.save({"features": torch.stack(buf)}, path)
+
     os.makedirs(shard_dir, exist_ok=True)
-    model.eval()
  
     all_shard_ids = []
     all_local_ids = []
     all_persons   = []
     all_ages      = []
- 
     shard_id     = 0
     shard_buffer = []
- 
-    def flush_shard(buf, id):
-        path = os.path.join(shard_dir, f"{split}_shard_{id:04d}.pt")
-        if not os.path.exists(path):
-            torch.save({"features": torch.stack(buf)}, path)
- 
+
+    model.to(device)
+    model.eval()
     with torch.inference_mode():
         for clips, (persons, ages) in tqdm(loader, desc=f"Extracting [{split}]"):
             clips    = clips.to(device)
