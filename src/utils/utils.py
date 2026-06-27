@@ -79,7 +79,7 @@ def train(model, loaders, criterion, optimizer, epochs=25, device=torch.device('
             mins, secs = elapsedTime(tick)
 
             print(f"{phase} Loss: {avgLoss:.4f}")
-            print(f"⏱ {secs:02}:{mins:02}")
+            print(f"⏱ {mins:02}:{secs:02}")
 
     if save_path:
         saveModel(model, save_path)
