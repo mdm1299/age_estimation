@@ -18,7 +18,6 @@ class ClipDataset(Dataset):
             img = img.convert("RGB")
             frames = self.transform(img)
 
-        #frames = self.transform(img)
         person = torch.tensor(sample["person"], dtype=torch.float32)
         age    = torch.tensor(sample["age"], dtype=torch.float32)
 
