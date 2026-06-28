@@ -15,37 +15,63 @@ def saveModel(model, save_path):
     torch.save(model.state_dict(), save_path)
     print(f"Saved model to {save_path}")
 
-def train(model, loaders, criterion, optimizer, epochs=25, device=torch.device('cpu'), save_path=None):
+def changeSuffix(path, oldSuff, newSuff):
+    return path.removesuffix(oldSuff) + newSuff
+
+class EarlyStopping:
+    def __init__(self, patience=5, save_path=None):
+        self.patience    = patience
+        self.save_path   = save_path
+        self.best_loss   = float("inf")
+        self.counter     = 0
+ 
+    def __call__(self, val_loss, model, optimizer):
+        if val_loss < self.best_loss:
+            self.best_loss = val_loss
+            self.counter   = 0
+            if self.save_path:
+                saveModel(model, self.save_path)
+                saveModel(optimizer, changeSuffix(self.save_path, ".pt", "_optim.pt"))
+        else:
+            self.counter += 1
+            if self.counter >= self.patience:
+                print(f"Early stopping triggered.")
+                return True
+        return False
+ 
+ 
+def train(model, loaders, criterion, optimizer, epochs=25, patience=None, device=torch.device('cpu'), save_path=None):
     epoch_loss = {
         "train": [],
-        "val": []
+        "val":   []
     }
-
-    is_cuda = device.type == "cuda"
-    scaler  = torch.amp.GradScaler("cuda") if is_cuda else None
-
+ 
+    is_cuda        = device.type == "cuda"
+    scaler         = torch.amp.GradScaler("cuda") if is_cuda else None
+    early_stopping = EarlyStopping(patience=patience, save_path=save_path) if patience else None
+ 
     model.to(device)
-
-    for epoch in range(1, epochs+1):
+ 
+    for epoch in range(1, epochs + 1):
         print(f"Epoch: {epoch}/{epochs}")
         print("-" * 15)
-
+ 
         for phase in ["train", "val"]:
             running_loss = 0
             tick = time.time()
-
+ 
             if phase == "train":
                 model.train()
             else:
                 model.eval()
-
+ 
             for batchIdx, (inputs, (person, age)) in (
                 pbar := tqdm(enumerate(loaders[phase]), total=len(loaders[phase]))
             ):
                 inputs, person, age = inputs.to(device), person.to(device), age.to(device)
-
+ 
                 optimizer.zero_grad()
-
+ 
                 with torch.set_grad_enabled(phase == "train"):
                     if is_cuda:
                         with torch.autocast("cuda"):
@@ -54,7 +80,7 @@ def train(model, loaders, criterion, optimizer, epochs=25, device=torch.device('
                     else:
                         output = model(inputs)
                         loss   = criterion(output, (person, age))
-
+ 
                     if phase == "train":
                         if scaler is not None:
                             scaler.scale(loss).backward()
@@ -63,27 +89,31 @@ def train(model, loaders, criterion, optimizer, epochs=25, device=torch.device('
                         else:
                             loss.backward()
                             optimizer.step()
-
+ 
                 running_loss += loss.item()
-
+ 
                 pbar.set_description(
                     f"[{epoch:02} | {epochs:02}] Loss: {loss.item():.4f}"
                 )
-
-                if (batchIdx+1) % 500 == 0:             # checkpoint every 500 batches
-                    saveModel(model, save_path)
-                    saveModel(optimizer, save_path.removesuffix(".pt") + "_optim.pt")
-
+ 
+                if (batchIdx + 1) % 500 == 0:
+                    saveModel(model, changeSuffix(save_path, ".pt", "_temp.pt"))
+                    saveModel(optimizer, changeSuffix(save_path, ".pt", "_temp_optim.pt"))
+ 
             avgLoss = running_loss / len(loaders[phase])
             epoch_loss[phase].append(avgLoss)
             mins, secs = elapsedTime(tick)
-
+ 
             print(f"{phase} Loss: {avgLoss:.4f}, ⏱ {mins:02}:{secs:02}")
-
-    if save_path:
+ 
+            if phase == "val" and early_stopping:
+                if early_stopping(avgLoss, model, optimizer):
+                    return epoch_loss
+ 
+    if save_path and not early_stopping:
         saveModel(model, save_path)
-        saveModel(optimizer, save_path.removesuffix(".pt") + "_optim.pt")
-
+        saveModel(optimizer, changeSuffix(save_path, ".pt", "_optim.pt"))
+ 
     return epoch_loss
 
 
