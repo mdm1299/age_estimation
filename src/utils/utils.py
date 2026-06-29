@@ -1,6 +1,8 @@
 import os
 import time
 import torch
+import numpy as np
+from collections import defaultdict
 from tqdm import tqdm
 
 def elapsedTime(lastTick):
@@ -164,3 +166,32 @@ def extract_features(model, loader, shard_dir, split, device, shard_size=256):
  
     print(f"[{split}] {len(all_shard_ids)} samples, {shard_id + 1} shards in {shard_dir}/")
  
+def evaluate(model, loader, device=torch.device("cpu")):
+    all_preds   = defaultdict(list)
+    all_labels  = defaultdict(list)
+
+    model.to(device)
+    model.eval()
+    with torch.no_grad():
+        for inputs, (person, age) in loader:
+            # move data to device
+            inputs = inputs.to(device)
+            # make prediction
+            person_pred, age_pred = model(inputs)
+            # store as numpy objects
+            person_pred = torch.sigmoid(person_pred).squeeze(1).cpu().numpy()
+            age_pred    = age_pred.squeeze(1).cpu().numpy()
+            person      = person.numpy()
+            age         = age.numpy()
+            # store the results
+            all_preds["person"].append(person_pred)
+            all_labels["person"].append(person)
+            all_preds["age"].append(age_pred)
+            all_labels["age"].append(age)
+
+    # concatenate the results as numpy arrays
+    for key in all_preds:
+        all_preds[key]  = np.concatenate(all_preds[key])
+        all_labels[key] = np.concatenate(all_labels[key])
+
+    return all_preds, all_labels
