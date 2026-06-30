@@ -1,2 +1,4 @@
 data/*
+!data/model/AgeNet.pt
+!data/model/AgeNet_optim.pt
 src/utils/__pycache__
