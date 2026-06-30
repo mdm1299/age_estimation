@@ -1,0 +1,2 @@
+data/model/AgeNet.pt filter=lfs diff=lfs merge=lfs -text
+data/model/AgeNet_optim.pt filter=lfs diff=lfs merge=lfs -text
